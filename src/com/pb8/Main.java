@@ -5,6 +5,9 @@ import org.joda.time.format.DateTimeFormat;
 import org.joda.time.format.DateTimeFormatter;
 
 import java.io.*;
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
 
 
 public class Main {
@@ -64,6 +67,22 @@ public class Main {
 
             pw.close();
         } catch(IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static void loadHistory(int n) {
+        try {
+            File file = new File("timelog.csv");
+            if (!file.exists()) {
+                return;
+            }
+            BufferedReader br = new BufferedReader(new FileReader(file));
+
+            for (String line; (line = br.readLine()) != null; ) {
+                // stuff it into a TimeDelta collection
+            }
+        } catch (IOException e) {
             e.printStackTrace();
         }
     }
