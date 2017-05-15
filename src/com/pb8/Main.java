@@ -1,16 +1,15 @@
 package com.pb8;
 
 import org.joda.time.*;
-import org.joda.time.format.DateTimeFormat;
-import org.joda.time.format.DateTimeFormatter;
+import org.joda.time.format.*;
 
 import java.io.*;
-
+import java.util.*;
 
 public class Main {
 
     public static void main(String[] args) {
-        String argMsg = "One argument expected: watch time as HH:MM:SS";
+        String argMsg = "One argument expected: watch time as HH:mm:ss";
         if (args.length != 1) {
             System.out.println(argMsg);
             return;
@@ -35,26 +34,24 @@ public class Main {
             return;
         }
 
-        Integer delta = (int)((watchTime.getMillis() - systemTime.getMillis()) / 1000);
-
-        // todo: refactor this into TimeKeeper
-        DateTimeFormatter fmt = DateTimeFormat.forPattern("HH:mm:ss");
-        System.out.println(String.format("System: %s\t Watch: %s\t Delta: %ds", fmt.print(systemTime), fmt.print(watchTime), delta));
+        double delta = (watchTime.getMillis() - systemTime.getMillis()) / 1000;
 
         TimeKeeper timeKeeper = new TimeKeeper();
-        timeKeeper.logTimecheck(new TimeKeeper.Timecheck(systemTime, delta, -1)); //todo
+        TimeKeeper.Timecheck timecheck = timeKeeper.createTimecheck(systemTime, delta);
+        timeKeeper.logTimecheck(timecheck);
+
+        DateTimeFormatter fmt = DateTimeFormat.forPattern("HH:mm:ss");
+        System.out.println(String.format("System: %s\tWatch: %s\tDelta: %.0fs\tAvg: %.1fs", fmt.print(systemTime), fmt.print(watchTime), delta, timecheck.avgDelta));
     }
 }
 
 class TimeKeeper {
     private String logfile;
+    private List<Timecheck> timecheckHist = new ArrayList<>();
 
     public TimeKeeper() {
         logfile = "timelog.csv";
-    }
-
-    public TimeKeeper(String _logfile) {
-        logfile = _logfile;
+        loadHistory();
     }
 
     public void logTimecheck(Timecheck timecheck) {
@@ -69,7 +66,7 @@ class TimeKeeper {
             PrintWriter pw = new PrintWriter(bw);
 
             if (isNew) {
-                pw.println("Date,Time,Delta,DailyChange");
+                pw.println("Date|Time|Delta|AvgDelta");
             }
             pw.println(timecheck.toString());
             pw.close();
@@ -78,37 +75,66 @@ class TimeKeeper {
         }
     }
 
-    public void loadHistory(int n) {
+    private void loadHistory() {
+        if(!timecheckHist.isEmpty()){
+            timecheckHist.clear();
+        }
         try {
             File file = new File(logfile);
             if (!file.exists()) {
                 return;
             }
-            BufferedReader br = new BufferedReader(new FileReader(file));
 
+            DateTimeFormatter formatter = DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss");
+            BufferedReader br = new BufferedReader(new FileReader(file));
             for (String line; (line = br.readLine()) != null; ) {
-                // todo: stuff it into a TimeDelta collection
+                String[] row = line.split("\\|");
+                if(row[0].equals("Date")) continue; // skip header
+                DateTime ts = formatter.parseDateTime(row[0] + " " + row[1]);
+                Double delta = Double.parseDouble(row[2]);
+                Double dailyChange = Double.parseDouble(row[3]);
+                Timecheck t = new Timecheck(ts, delta, dailyChange);
+                timecheckHist.add(t);
             }
+            br.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
+    public Timecheck createTimecheck(DateTime systemTime, double delta) {
+        // calculate a 5-period rolling avg of delta
+        double avgDelta = 0;
+        int n = timecheckHist.size();
+        if(n == 0 || timecheckHist.get(n-1).avgDelta == -1){
+            avgDelta = delta;
+        }
+        else {
+            double sumDelta = 0;
+            for(int i = (n >= 4 ? n-4 : 0); i < n; i++){
+                sumDelta += timecheckHist.get(i).delta;
+            }
+            avgDelta = (sumDelta + delta) / (n < 4 ? n + 1 : 5);
+        }
+
+        return new Timecheck(systemTime, delta, avgDelta);
+    }
+
     public static class Timecheck {
         public DateTime timestamp;
-        public Integer delta;
-        public Integer dailyChange;
+        double delta;
+        double avgDelta;
 
-        public Timecheck(DateTime _timestamp, Integer _delta, Integer _dailyChange) {
+        public Timecheck(DateTime _timestamp, double _delta, double _avgDelta) {
             timestamp = _timestamp;
             delta = _delta;
-            dailyChange = _dailyChange;
+            avgDelta = _avgDelta;
         }
 
         public String toString(){
             DateTimeFormatter fmtDate = DateTimeFormat.forPattern("yyyy-MM-dd");
             DateTimeFormatter fmtTime = DateTimeFormat.forPattern("HH:mm:ss");
-            return String.format("%s,%s,%d,%d", fmtDate.print(timestamp), fmtTime.print(timestamp), delta, dailyChange);
+            return String.format("%s|%s|%.0f|%.1f", fmtDate.print(timestamp), fmtTime.print(timestamp), delta, avgDelta);
         }
     }
 }
