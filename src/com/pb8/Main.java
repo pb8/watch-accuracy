@@ -9,13 +9,18 @@ import java.util.*;
 public class Main {
 
     public static void main(String[] args) {
-        String argMsg = "One argument expected: watch time as HH:mm:ss";
-        if (args.length != 1) {
+        String argMsg = "Watch time as HH:mm:ss expected";
+        if (args.length < 1) {
             System.out.println(argMsg);
             return;
         }
 
-        DateTime systemTime = new DateTime(); // first snap the system time
+        boolean isResetAvg = false;
+        if(args.length > 1 && (args[1].equals("-r") || args[1].equals("--reset-avg"))) {
+            isResetAvg = true;
+        }
+
+        DateTime systemTime = new DateTime(); // first we snap the system time
 
         String[] userInput = args[0].split(":");
         if (userInput.length != 3) {
@@ -34,14 +39,12 @@ public class Main {
             return;
         }
 
-        double delta = (watchTime.getMillis() - systemTime.getMillis()) / 1000;
-
         TimeKeeper timeKeeper = new TimeKeeper();
-        TimeKeeper.Timecheck timecheck = timeKeeper.createTimecheck(systemTime, delta);
+        TimeKeeper.Timecheck timecheck = timeKeeper.createTimecheck(systemTime, watchTime, isResetAvg);
         timeKeeper.logTimecheck(timecheck);
 
         DateTimeFormatter fmt = DateTimeFormat.forPattern("HH:mm:ss");
-        System.out.println(String.format("System: %s\tWatch: %s\tDelta: %.0fs\tAvg: %.1fs", fmt.print(systemTime), fmt.print(watchTime), delta, timecheck.avgDelta));
+        System.out.println(String.format("System: %s\tWatch: %s\tDelta: %.0fs\tAvg: %.1fs", fmt.print(systemTime), fmt.print(watchTime), timecheck.delta, timecheck.avgDelta));
     }
 }
 
@@ -92,8 +95,8 @@ class TimeKeeper {
                 if(row[0].equals("Date")) continue; // skip header
                 DateTime ts = formatter.parseDateTime(row[0] + " " + row[1]);
                 Double delta = Double.parseDouble(row[2]);
-                Double dailyChange = Double.parseDouble(row[3]);
-                Timecheck t = new Timecheck(ts, delta, dailyChange);
+                Double rollingDelta = Double.parseDouble(row[3]);
+                Timecheck t = new Timecheck(ts, delta, rollingDelta);
                 timecheckHist.add(t);
             }
             br.close();
@@ -102,11 +105,14 @@ class TimeKeeper {
         }
     }
 
-    public Timecheck createTimecheck(DateTime systemTime, double delta) {
+    public Timecheck createTimecheck(DateTime systemTime, DateTime watchTime, boolean isResetAvg) {
+        watchTime.hourOfDay().setCopy(systemTime.getHourOfDay()); //ignore hours
+        double delta = (watchTime.getMillis() - systemTime.getMillis()) / 1000;
+
         // calculate a 5-period rolling avg of delta
         double avgDelta = 0;
         int n = timecheckHist.size();
-        if(n == 0 || timecheckHist.get(n-1).avgDelta == -1){
+        if(n == 0 || timecheckHist.get(n-1).avgDelta == -9999){
             avgDelta = delta;
         }
         else {
@@ -115,6 +121,10 @@ class TimeKeeper {
                 sumDelta += timecheckHist.get(i).delta;
             }
             avgDelta = (sumDelta + delta) / (n < 4 ? n + 1 : 5);
+        }
+
+        if(isResetAvg){
+            avgDelta = -9999;
         }
 
         return new Timecheck(systemTime, delta, avgDelta);
